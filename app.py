@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np
 
 # Set page configuration for a wide, clean dashboard layout
 st.set_page_config(page_title="IT Ticket Analytics System", layout="wide", initial_sidebar_state="expanded")
@@ -59,6 +60,7 @@ STANDARD_TEAMS = [
 # EXPLICIT HIGH-CONTRAST PALETTES PER PLOT
 INBOUND_SOURCE_PALETTE = ["#EC4899", "#2563EB", "#10B981", "#F59E0B"] 
 LOCATION_PALETTE = ["#06B6D4", "#F59E0B", "#10B981", "#2563EB", "#EC4899", "#111827"] 
+AGENT_PALETTE = ["#6366F1", "#8B5CF6", "#EC4899", "#3B82F6", "#14B8A6"]
 
 if uploaded_file is not None:
     try:
@@ -98,8 +100,11 @@ if uploaded_file is not None:
         def_loc = next((c for c in all_cols if 'location' in c.lower() or 'site' in c.lower() or 'region' in c.lower() or 'branch' in c.lower()), all_cols[0] if all_cols else None)
         def_sla = next((c for c in all_cols if ('sla' in c.lower() or 'breach' in c.lower() or 'compliance' in c.lower() or 'violated' in c.lower() or 'target' in c.lower()) and 'group' not in c.lower() and 'team' not in c.lower()), all_cols[0] if all_cols else None)
         def_desc = next((c for c in all_cols if 'desc' in c.lower() or 'subject' in c.lower() or 'summary' in c.lower() or 'title' in c.lower()), def_type if def_type else all_cols[0])
+        # Auto-detect Agent Field
+        def_agent = next((c for c in all_cols if 'agent' in c.lower() or 'assignee' in c.lower() or 'owner' in c.lower() or 'engineer' in c.lower()), all_cols[0] if all_cols else None)
 
         team_col = st.sidebar.selectbox("Team / Group Column:", options=all_cols, index=all_cols.index(def_team) if def_team in all_cols else 0)
+        agent_col = st.sidebar.selectbox("Agent / Assignee Column:", options=all_cols, index=all_cols.index(def_agent) if def_agent in all_cols else 0)
         source_col = st.sidebar.selectbox("Source / Channel Column:", options=all_cols, index=all_cols.index(def_source) if def_source in all_cols else 0)
         date_col = st.sidebar.selectbox("Date / Timestamp Column:", options=all_cols, index=all_cols.index(def_date) if def_date in all_cols else 0)
         type_col = st.sidebar.selectbox("Ticket Type / Category Column:", options=all_cols, index=all_cols.index(def_type) if def_type in all_cols else 0)
@@ -128,6 +133,13 @@ if uploaded_file is not None:
             df['Categorized_Team'] = "Unknown Group Column"
             active_standard_list = []
             unique_others = []
+
+        # Agent Processing Logic
+        if agent_col:
+            df[agent_col] = df[agent_col].fillna("Unassigned Agent").astype(str).str.strip()
+            unique_agents_count = df[df[agent_col] != "Unassigned Agent"][agent_col].nunique()
+        else:
+            unique_agents_count = 0
 
         # High Intel Extractor for Incident vs Request
         if type_col:
@@ -201,19 +213,21 @@ if uploaded_file is not None:
             
             # --- TOP LEVEL KPI METRICS ---
             st.subheader("⚡ Executive Summary")
-            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+            m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
             with m_col1:
-                st.metric(label="Total Logged Tickets (Exact Count)", value=f"{total_rows_loaded:,}")
+                st.metric(label="Total Logged Tickets", value=f"{total_rows_loaded:,}")
             with m_col2:
-                st.metric(label="Active Standard Teams", value=len(active_standard_list))
+                st.metric(label="Active Core Teams", value=len(active_standard_list))
             with m_col3:
-                st.metric(label="Other Unlisted Teams Found", value=len(unique_others))
+                st.metric(label="Assigned Agents", value=f"{unique_agents_count}")
             with m_col4:
+                st.metric(label="Other Teams Found", value=len(unique_others))
+            with m_col5:
                 if location_col:
                     unique_locs = df[df[location_col] != "Blank / Unspecified"][location_col].nunique()
-                    st.metric(label="Identified Active Sites", value=f"{unique_locs}")
+                    st.metric(label="Active Sites", value=f"{unique_locs}")
                 else:
-                    st.metric(label="Identified Active Sites", value="N/A")
+                    st.metric(label="Active Sites", value="N/A")
 
             # --- INTERACTIVE TEAM EXPLORERS ---
             exp_col1, exp_col2 = st.columns(2)
@@ -237,7 +251,8 @@ if uploaded_file is not None:
 
             # --- VISUALIZATION TABS ---
             st.markdown("---")
-            tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+                "👤 Agent Performance Count",
                 "🏢 Inbound Source Distribution", 
                 "📍 Location Volume Performance", 
                 "📋 Incident vs Request Analysis",
@@ -245,8 +260,40 @@ if uploaded_file is not None:
                 "📅 Ticket Time-Series Trends"
             ])
 
-            # TAB 1: INBOUND SOURCE DISTRIBUTION
+            # TAB 1: AGENT WISE TICKET HANDLING COUNT
             with tab1:
+                if agent_col:
+                    st.write("### Top Ticket Handling Agents")
+                    
+                    # Configuration slider inside the tab for dynamic filtering
+                    max_agents = st.slider("Select top number of agents to display:", min_value=5, max_value=30, value=15)
+                    
+                    agent_counts = df[agent_col].value_counts().reset_index()
+                    agent_counts.columns = ['Agent Name', 'Tickets Handled']
+                    
+                    if not agent_counts.empty:
+                        fig_agent = px.bar(
+                            agent_counts.head(max_agents), 
+                            x='Tickets Handled', 
+                            y='Agent Name', 
+                            orientation='h', 
+                            text_auto=True,
+                            color='Tickets Handled',
+                            color_continuous_scale=px.colors.sequential.Blugrn
+                        )
+                        fig_agent.update_traces(textfont=dict(weight='bold'), textposition='outside')
+                        fig_agent.update_layout(
+                            yaxis={'categoryorder':'total ascending'}, 
+                            margin=dict(l=20, r=20, t=30, b=20),
+                            xaxis_title="Volume of Handled Tickets",
+                            yaxis_title=None
+                        )
+                        st.plotly_chart(fig_agent, use_container_width=True)
+                    else:
+                        st.warning("No agent information found in this column.")
+
+            # TAB 2: INBOUND SOURCE DISTRIBUTION
+            with tab2:
                 if source_col:
                     st.write("### Inbound Ticket Channels")
                     df[source_col] = df[source_col].fillna("Unknown Source").astype(str)
@@ -261,8 +308,8 @@ if uploaded_file is not None:
                     fig_src.update_layout(margin=dict(l=20, r=20, t=30, b=20))
                     st.plotly_chart(fig_src, use_container_width=True)
 
-            # TAB 2: LOCATION BASED ANALYSIS
-            with tab2:
+            # TAB 3: LOCATION BASED ANALYSIS
+            with tab3:
                 if location_col:
                     st.write("### Site Ticket Share Proportions")
                     loc_counts = df[df[location_col] != "Blank / Unspecified"][location_col].value_counts().reset_index()
@@ -287,8 +334,8 @@ if uploaded_file is not None:
                     else:
                         st.warning("Location database features empty fields only.")
 
-            # TAB 3: INCIDENT VS REQUEST ANALYSIS (Smooth Bounce Animation Triggered)
-            with tab3:
+            # TAB 4: INCIDENT VS REQUEST ANALYSIS
+            with tab4:
                 if type_col:
                     st.write("### Ticket Category Distribution")
                     filtered_type_df = df[df['Ticket_Type_Group'].isin(["Incident", "Request"])]
@@ -311,8 +358,8 @@ if uploaded_file is not None:
                     else:
                         st.warning("⚠️ No distinct Incidents or Requests discovered inside column row arrays.")
 
-            # TAB 4: SLA COMPLIANCE ANALYSIS
-            with tab4:
+            # TAB 5: SLA COMPLIANCE ANALYSIS
+            with tab5:
                 if sla_col:
                     st.write("### SLA Target Adherence Performance Summary")
                     filtered_sla_df = df[df['SLA_Group'].isin(["Within SLA", "SLA Violated"])]
@@ -335,8 +382,8 @@ if uploaded_file is not None:
                     else:
                         st.warning("⚠️ Column selection misaligned. Please switch the 'SLA Target Status Column' dropdown in the sidebar override configuration panel to pick your real SLA log column field.")
 
-            # TAB 5: TICKET TIME-SERIES TRENDS
-            with tab5:
+            # TAB 6: TICKET TIME-SERIES TRENDS
+            with tab6:
                 if date_col:
                     st.write("### Ticket Intake Trends")
                     time_view = st.radio("Select View:", options=["Per Day", "Per Week"], horizontal=True)
@@ -403,7 +450,7 @@ if uploaded_file is not None:
                 
             st.write("### 📋 Filtered Complete Searchable Inventory Log")
             if not filtered_df.empty:
-                display_cols = [c for c in [date_col, team_col, type_col, location_col, sla_col, desc_col] if c is not None]
+                display_cols = [c for c in [date_col, team_col, agent_col, type_col, location_col, sla_col, desc_col] if c is not None]
                 
                 st.dataframe(
                     filtered_df[['Detected_Issue_Pattern'] + display_cols], 
