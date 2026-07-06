@@ -48,22 +48,6 @@ st.markdown("---")
 st.sidebar.header("⚙️ Data Configuration")
 uploaded_file = st.sidebar.file_uploader("Upload May Ticket Data (Excel)", type=["xlsx", "xls"])
 
-# SMART TEAM ALIAS MAPPING DICTIONARY
-# Key: The clean display name | Value: List of keywords found in your raw data
-TEAM_MAPPING_RULES = {
-    "End User Support": ["end user support", "eus", "eu-srf"],
-    "Nexus Wintel & Virtual": ["nexus wintel", "wintel", "virtual"],
-    "Nexus Cloud & Linux": ["nexus cloud", "cloud", "linux"],
-    "Cyber Defense Center": ["cyber defense", "cdc"],
-    "Service Delivery & Asset Management": ["service delivery", "asset management", "sam"],
-    "Remote Support": ["remote support"],
-    "EON": ["eon"],
-    "Backup and Storage": ["backup", "storage"],
-    "Network and Security": ["network", "security"],
-    "Sentinel Team": ["sentinel"],
-    "Code Fusion": ["code fusion"]
-}
-
 # EXPLICIT HIGH-CONTRAST PALETTES PER PLOT
 INBOUND_SOURCE_PALETTE = ["#EC4899", "#2563EB", "#10B981", "#F59E0B"] 
 LOCATION_PALETTE = ["#06B6D4", "#F59E0B", "#10B981", "#2563EB", "#EC4899", "#111827"] 
@@ -119,28 +103,41 @@ if uploaded_file is not None:
 
         total_rows_loaded = len(df)
 
-        # Advanced Keyword Team Categorization Logic
+        # --- DYNAMIC 50/50 SPLIT TEAM TRACKING ENGINE ---
+        active_core_teams_list = []
+        other_teams_list = []
+
         if team_col:
-            df[team_col] = df[team_col].fillna("Blank / Unassigned").astype(str)
-            df['Cleaned_Team'] = df[team_col].str.strip()
+            df[team_col] = df[team_col].fillna("Blank / Unassigned").astype(str).str.strip()
             
-            def map_team_advanced(val):
-                val_lower = val.lower()
-                for standard_name, keywords in TEAM_MAPPING_RULES.items():
-                    if any(kw in val_lower for kw in keywords):
-                        return standard_name
-                return "Other Teams"
+            # 1. Get exact value counts of every unique team in descending order
+            team_counts = df[team_col].value_counts().reset_index()
+            team_counts.columns = ['Team_Name', 'Ticket_Count']
             
-            df['Categorized_Team'] = df['Cleaned_Team'].apply(map_team_advanced)
+            # Filter out generic blank labels from calculations if necessary
+            team_counts = team_counts[~team_counts['Team_Name'].isin(["", "Blank / Unassigned"])]
             
-            # Filter logic for metrics
-            active_standard_list = df[df['Categorized_Team'] != "Other Teams"]['Categorized_Team'].unique()
-            other_teams_df = df[df['Categorized_Team'] == "Other Teams"]
-            unique_others = other_teams_df[~other_teams_df['Cleaned_Team'].isin(["", "Blank / Unassigned"])]['Cleaned_Team'].unique() if not other_teams_df.empty else []
+            total_unique_teams = len(team_counts)
+            
+            if total_unique_teams > 0:
+                # 2. Calculate the dynamic split index (halfway point, rounded up)
+                split_limit = int(np.ceil(total_unique_teams / 2))
+                
+                # 3. Slit list down the middle numerically 
+                top_half_df = team_counts.head(split_limit)
+                bottom_half_df = team_counts.tail(total_unique_teams - split_limit)
+                
+                # Convert tuples for streamlined render looping
+                active_core_teams_list = list(top_half_df.itertuples(index=False, name=None))
+                other_teams_list = list(bottom_half_df.itertuples(index=False, name=None))
+                
+                # 4. Map back to main dataframe for downstream visualizations
+                top_core_names = set(top_half_df['Team_Name'])
+                df['Categorized_Team'] = df[team_col].apply(lambda x: x if x in top_core_names else "Other Teams")
+            else:
+                df['Categorized_Team'] = "Other Teams"
         else:
-            df['Categorized_Team'] = "Unknown Group Column"
-            active_standard_list = []
-            unique_others = []
+            df['Categorized_Team'] = "Column Not Selected"
 
         # Agent Processing Logic
         if agent_col:
@@ -225,41 +222,29 @@ if uploaded_file is not None:
             with m_col1:
                 st.metric(label="Total Logged Tickets", value=f"{total_rows_loaded:,}")
             with m_col2:
-                st.metric(label="Active Core Teams", value=len(active_standard_list))
+                st.metric(label="Active Core Teams (Top Half)", value=len(active_core_teams_list))
             with m_col3:
                 st.metric(label="Assigned Agents", value=f"{unique_agents_count}")
             with m_col4:
-                st.metric(label="Other Teams Found", value=len(unique_others))
+                st.metric(label="Other Teams (Bottom Half)", value=len(other_teams_list))
 
-            # --- INTERACTIVE TEAM EXPLORERS (With Correct Aliasing and Sorting) ---
+            # --- INTERACTIVE TEAM EXPLORERS (Dynamic 50/50 Split Lists) ---
             exp_col1, exp_col2 = st.columns(2)
             with exp_col1:
-                with st.expander("🔍 Click here to see WHICH Core Teams are Active (Highest First)"):
-                    if len(active_standard_list) > 0:
-                        core_team_data = []
-                        for team in active_standard_list:
-                            count_t = len(df[df['Categorized_Team'] == team])
-                            core_team_data.append((team, count_t))
-                        core_team_data.sort(key=lambda x: x[1], reverse=True)
-                        
-                        for team, count_t in core_team_data:
-                            st.write(f"• **{team}** ({count_t} tickets)")
+                with st.expander("🔍 Click to view Active Core Teams (Highest handling volume half)"):
+                    if len(active_core_teams_list) > 0:
+                        for team, count in active_core_teams_list:
+                            st.write(f"• **{team}** ({count} tickets)")
                     else:
-                        st.info("No predefined core teams detected.")
+                        st.info("No core teams detected.")
 
             with exp_col2:
-                with st.expander("🔍 Click here to view unlisted 'Other Teams' (Highest First)"):
-                    if len(unique_others) > 0:
-                        other_team_data = []
-                        for ot in unique_others:
-                            count_ot = len(df[df['Cleaned_Team'] == ot])
-                            other_team_data.append((ot, count_ot))
-                        other_team_data.sort(key=lambda x: x[1], reverse=True)
-                        
-                        for ot, count_ot in other_team_data:
-                            st.write(f"• **{ot}** ({count_ot} tickets)")
+                with st.expander("🔍 Click to view Remaining 'Other Teams' (Lower handling volume half)"):
+                    if len(other_teams_list) > 0:
+                        for team, count in other_teams_list:
+                            st.write(f"• **{team}** ({count} tickets)")
                     else:
-                        st.info("No unlisted teams found. All rows matched clean rule metrics!")
+                        st.info("No unlisted trailing teams found.")
 
             # --- VISUALIZATION TABS ---
             st.markdown("---")
