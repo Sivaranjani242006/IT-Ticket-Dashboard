@@ -21,19 +21,18 @@ st.markdown("""
             opacity: 0.5;
         }
         55% {
-            transform: scale(1.02) translateY(-4px); /* Fluid jerky overshoot upward movement */
+            transform: scale(1.02) translateY(-4px); 
             opacity: 0.9;
         }
         75% {
-            transform: scale(0.99) translateY(2px); /* Slight bounce back adjustment down */
+            transform: scale(0.99) translateY(2px); 
         }
         100% {
-            transform: scale(1) translateY(0); /* Completely stable presentation state lock */
+            transform: scale(1) translateY(0); 
             opacity: 1;
         }
     }
 
-    /* Target the Streamlit element container boxes to inject the bounce pop style whenever views change */
     [data-testid="stPlotlyChart"] {
         animation: plotBounceEntrance 0.65s cubic-bezier(0.25, 1.1, 0.5, 1) both;
     }
@@ -49,18 +48,25 @@ st.markdown("---")
 st.sidebar.header("⚙️ Data Configuration")
 uploaded_file = st.sidebar.file_uploader("Upload May Ticket Data (Excel)", type=["xlsx", "xls"])
 
-# List of predefined standard teams
-STANDARD_TEAMS = [
-    "Sentinel Team", "End User Support", "Backup and Storage", "EON", 
-    "Code Fusion", "Cyber Defense", "Nexus Wintel", "Nexus Cloud", 
-    "Network and Security", "Service Delivery and Asset Management",
-    "Remote Support"
-]
+# SMART TEAM ALIAS MAPPING DICTIONARY
+# Key: The clean display name | Value: List of keywords found in your raw data
+TEAM_MAPPING_RULES = {
+    "End User Support": ["end user support", "eus", "eu-srf"],
+    "Nexus Wintel & Virtual": ["nexus wintel", "wintel", "virtual"],
+    "Nexus Cloud & Linux": ["nexus cloud", "cloud", "linux"],
+    "Cyber Defense Center": ["cyber defense", "cdc"],
+    "Service Delivery & Asset Management": ["service delivery", "asset management", "sam"],
+    "Remote Support": ["remote support"],
+    "EON": ["eon"],
+    "Backup and Storage": ["backup", "storage"],
+    "Network and Security": ["network", "security"],
+    "Sentinel Team": ["sentinel"],
+    "Code Fusion": ["code fusion"]
+}
 
 # EXPLICIT HIGH-CONTRAST PALETTES PER PLOT
 INBOUND_SOURCE_PALETTE = ["#EC4899", "#2563EB", "#10B981", "#F59E0B"] 
 LOCATION_PALETTE = ["#06B6D4", "#F59E0B", "#10B981", "#2563EB", "#EC4899", "#111827"] 
-AGENT_PALETTE = ["#6366F1", "#8B5CF6", "#EC4899", "#3B82F6", "#14B8A6"]
 
 if uploaded_file is not None:
     try:
@@ -113,18 +119,21 @@ if uploaded_file is not None:
 
         total_rows_loaded = len(df)
 
-        # Team Categorization Logic
+        # Advanced Keyword Team Categorization Logic
         if team_col:
             df[team_col] = df[team_col].fillna("Blank / Unassigned").astype(str)
             df['Cleaned_Team'] = df[team_col].str.strip()
             
-            def map_team(val):
-                for team in STANDARD_TEAMS:
-                    if team.lower() in val.lower():
-                        return team
+            def map_team_advanced(val):
+                val_lower = val.lower()
+                for standard_name, keywords in TEAM_MAPPING_RULES.items():
+                    if any(kw in val_lower for kw in keywords):
+                        return standard_name
                 return "Other Teams"
             
-            df['Categorized_Team'] = df['Cleaned_Team'].apply(map_team)
+            df['Categorized_Team'] = df['Cleaned_Team'].apply(map_team_advanced)
+            
+            # Filter logic for metrics
             active_standard_list = df[df['Categorized_Team'] != "Other Teams"]['Categorized_Team'].unique()
             other_teams_df = df[df['Categorized_Team'] == "Other Teams"]
             unique_others = other_teams_df[~other_teams_df['Cleaned_Team'].isin(["", "Blank / Unassigned"])]['Cleaned_Team'].unique() if not other_teams_df.empty else []
@@ -210,7 +219,7 @@ if uploaded_file is not None:
         # --- ROUTING PAGES ---
         if app_page == "Dashboard Visuals":
             
-            # --- TOP LEVEL KPI METRICS (Cleaned to 4 Columns, Active Sites Removed) ---
+            # --- TOP LEVEL KPI METRICS ---
             st.subheader("⚡ Executive Summary")
             m_col1, m_col2, m_col3, m_col4 = st.columns(4)
             with m_col1:
@@ -222,12 +231,11 @@ if uploaded_file is not None:
             with m_col4:
                 st.metric(label="Other Teams Found", value=len(unique_others))
 
-            # --- INTERACTIVE TEAM EXPLORERS (Sorted Descending by Ticket Volume) ---
+            # --- INTERACTIVE TEAM EXPLORERS (With Correct Aliasing and Sorting) ---
             exp_col1, exp_col2 = st.columns(2)
             with exp_col1:
                 with st.expander("🔍 Click here to see WHICH Core Teams are Active (Highest First)"):
                     if len(active_standard_list) > 0:
-                        # Build and sort list by volume
                         core_team_data = []
                         for team in active_standard_list:
                             count_t = len(df[df['Categorized_Team'] == team])
@@ -242,7 +250,6 @@ if uploaded_file is not None:
             with exp_col2:
                 with st.expander("🔍 Click here to view unlisted 'Other Teams' (Highest First)"):
                     if len(unique_others) > 0:
-                        # Build and sort list by volume
                         other_team_data = []
                         for ot in unique_others:
                             count_ot = len(df[df['Cleaned_Team'] == ot])
@@ -252,7 +259,7 @@ if uploaded_file is not None:
                         for ot, count_ot in other_team_data:
                             st.write(f"• **{ot}** ({count_ot} tickets)")
                     else:
-                        st.info("No unlisted teams found.")
+                        st.info("No unlisted teams found. All rows matched clean rule metrics!")
 
             # --- VISUALIZATION TABS ---
             st.markdown("---")
