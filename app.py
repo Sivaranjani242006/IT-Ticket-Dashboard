@@ -5,7 +5,7 @@ import plotly.express as px
 # Set page configuration for a wide, clean dashboard layout
 st.set_page_config(page_title="IT Ticket Analytics System", layout="wide", initial_sidebar_state="expanded")
 
-# Custom UI styling for high visual contrast, modern management aesthetics, and vertical bar-raising sweep effects
+# Custom UI styling for high visual contrast, modern management aesthetics, and Tab Content Bounce Animations
 st.markdown("""
     <style>
     .main .block-container { padding-top: 2rem; padding-bottom: 2rem; }
@@ -13,29 +13,28 @@ st.markdown("""
     h3 { color: #1E40AF; font-weight: 600; margin-top: 1.5rem; }
     .stMetric { background-color: #F8FAFC; padding: 15px; border-radius: 10px; border: 1px solid #CBD5E1; }
     
-    /* --- CSS KEYFRAME FOR PHYSICALLY RAISING BARS UPWARD ON TAB SWITCH --- */
-    @keyframes barGrowthSweep {
+    /* --- CSS KEYFRAME ANIMATION ENGINE FOR FLUID PLOT JERK/MOVEMENT --- */
+    @keyframes plotBounceEntrance {
         0% {
-            transform: scaleY(0.1);
-            opacity: 0.4;
+            transform: scale(0.93) translateY(12px);
+            opacity: 0.5;
         }
-        60% {
-            transform: scaleY(1.04); /* Overshoot fluid upward jerk */
+        55% {
+            transform: scale(1.02) translateY(-4px); /* Fluid jerky overshoot upward movement */
             opacity: 0.9;
         }
-        80% {
-            transform: scaleY(0.98); /* Settling adjustment down */
+        75% {
+            transform: scale(0.99) translateY(2px); /* Slight bounce back adjustment down */
         }
         100% {
-            transform: scaleY(1); /* stable locked presentation state */
+            transform: scale(1) translateY(0); /* Completely stable presentation state lock */
             opacity: 1;
         }
     }
 
-    /* Target the container frames to run the physics stretch directly from baseline up */
+    /* Target the Streamlit element container boxes to inject the bounce pop style whenever views change */
     [data-testid="stPlotlyChart"] {
-        animation: barGrowthSweep 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
-        transform-origin: bottom center; 
+        animation: plotBounceEntrance 0.65s cubic-bezier(0.25, 1.1, 0.5, 1) both;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -92,14 +91,13 @@ if uploaded_file is not None:
         
         all_cols = list(df.columns)
         
-        # FIXED VARIABLES POSITIONING IN MEMORY
         def_team = next((c for c in all_cols if 'group' in c.lower() or 'team' in c.lower()), all_cols[0] if all_cols else None)
         def_source = next((c for c in all_cols if 'source' in c.lower() or 'channel' in c.lower() or 'mode' in c.lower()), all_cols[0] if all_cols else None)
         def_date = next((c for c in all_cols if 'date' in c.lower() or 'created' in c.lower() or 'opened' in c.lower()), all_cols[0] if all_cols else None)
         def_type = next((c for c in all_cols if 'category' in c.lower() or 'type' in c.lower() or 'classification' in c.lower()), all_cols[0] if all_cols else None)
         def_loc = next((c for c in all_cols if 'location' in c.lower() or 'site' in c.lower() or 'region' in c.lower() or 'branch' in c.lower()), all_cols[0] if all_cols else None)
         def_sla = next((c for c in all_cols if ('sla' in c.lower() or 'breach' in c.lower() or 'compliance' in c.lower() or 'violated' in c.lower() or 'target' in c.lower()) and 'group' not in c.lower() and 'team' not in c.lower()), all_cols[0] if all_cols else None)
-        def_desc = next((c for c in all_cols if 'desc' in c.lower() or 'subject' in c.lower() or 'summary' in c.lower() or 'title' in c.lower()), def_type if def_type else (all_cols[0] if all_cols else None))
+        def_desc = next((c for c in all_cols if 'desc' in c.lower() or 'subject' in c.lower() or 'summary' in c.lower() or 'title' in c.lower()), def_type if def_type else all_cols[0])
 
         team_col = st.sidebar.selectbox("Team / Group Column:", options=all_cols, index=all_cols.index(def_team) if def_team in all_cols else 0)
         source_col = st.sidebar.selectbox("Source / Channel Column:", options=all_cols, index=all_cols.index(def_source) if def_source in all_cols else 0)
@@ -198,18 +196,6 @@ if uploaded_file is not None:
         else:
             df['Detected_Issue_Pattern'] = "Description Column Map Required"
 
-        # --- TRANSITION ANIMATION INJECTION ENGINE ---
-        def apply_growth_animation(fig, categorical_list, value_list):
-            fig.update_layout(
-                transition=dict(duration=500, easing="cubic-in-out")
-            )
-            frames = [
-                dict(data=[dict(y=[0] * len(value_list))]), 
-                dict(data=[dict(y=value_list)])             
-            ]
-            fig.frames = frames
-            return fig
-
         # --- ROUTING PAGES ---
         if app_page == "Dashboard Visuals":
             
@@ -301,7 +287,7 @@ if uploaded_file is not None:
                     else:
                         st.warning("Location database features empty fields only.")
 
-            # TAB 3: INCIDENT VS REQUEST ANALYSIS
+            # TAB 3: INCIDENT VS REQUEST ANALYSIS (Smooth Bounce Animation Triggered)
             with tab3:
                 if type_col:
                     st.write("### Ticket Category Distribution")
@@ -315,13 +301,12 @@ if uploaded_file is not None:
                             type_counts, x='Classification Type', y='Ticket Count',
                             color='Classification Type', text_auto=True,
                             color_discrete_map={
-                                "Incident": "#2563EB", 
-                                "Request": "#EC4899"
+                                "Incident": "#2563EB",   # Bold Royal Blue
+                                "Request": "#EC4899"     # Bold Vibrant Hot Pink
                             }
                         )
                         fig_type.update_traces(textfont=dict(size=14, color='black', weight='bold'), textposition='outside')
                         fig_type.update_layout(showlegend=False, margin=dict(l=20, r=20, t=30, b=20), xaxis_title=None)
-                        fig_type = apply_growth_animation(fig_type, type_counts['Classification Type'].tolist(), type_counts['Ticket Count'].tolist())
                         st.plotly_chart(fig_type, use_container_width=True)
                     else:
                         st.warning("⚠️ No distinct Incidents or Requests discovered inside column row arrays.")
@@ -340,13 +325,12 @@ if uploaded_file is not None:
                             sla_counts, x='SLA Status', y='Ticket Count',
                             color='SLA Status', text_auto=True,
                             color_discrete_map={
-                                "Within SLA": "#10B981", 
-                                "SLA Violated": "#F59E0B"
+                                "Within SLA": "#10B981",    # Bold Emerald Green
+                                "SLA Violated": "#F59E0B"   # Bold Gold Yellow
                             }
                         )
                         fig_sla.update_traces(textfont=dict(size=14, color='black', weight='bold'), textposition='outside')
                         fig_sla.update_layout(showlegend=False, margin=dict(l=20, r=20, t=30, b=20), xaxis_title=None)
-                        fig_sla = apply_growth_animation(fig_sla, sla_counts['SLA Status'].tolist(), sla_counts['Ticket Count'].tolist())
                         st.plotly_chart(fig_sla, use_container_width=True)
                     else:
                         st.warning("⚠️ Column selection misaligned. Please switch the 'SLA Target Status Column' dropdown in the sidebar override configuration panel to pick your real SLA log column field.")
@@ -385,7 +369,6 @@ if uploaded_file is not None:
                                 title="Weekly Ticket Breakdown Volume"
                             )
                             fig_trend.update_layout(showlegend=False)
-                            fig_trend = apply_growth_animation(fig_trend, trend_df['Week'].tolist(), trend_df['Tickets'].tolist())
                         
                         fig_trend.update_layout(hovermode="x unified", margin=dict(l=20, r=20, t=40, b=20))
                         st.plotly_chart(fig_trend, use_container_width=True)
