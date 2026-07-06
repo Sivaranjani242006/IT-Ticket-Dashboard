@@ -100,7 +100,6 @@ if uploaded_file is not None:
         def_loc = next((c for c in all_cols if 'location' in c.lower() or 'site' in c.lower() or 'region' in c.lower() or 'branch' in c.lower()), all_cols[0] if all_cols else None)
         def_sla = next((c for c in all_cols if ('sla' in c.lower() or 'breach' in c.lower() or 'compliance' in c.lower() or 'violated' in c.lower() or 'target' in c.lower()) and 'group' not in c.lower() and 'team' not in c.lower()), all_cols[0] if all_cols else None)
         def_desc = next((c for c in all_cols if 'desc' in c.lower() or 'subject' in c.lower() or 'summary' in c.lower() or 'title' in c.lower()), def_type if def_type else all_cols[0])
-        # Auto-detect Agent Field
         def_agent = next((c for c in all_cols if 'agent' in c.lower() or 'assignee' in c.lower() or 'owner' in c.lower() or 'engineer' in c.lower()), all_cols[0] if all_cols else None)
 
         team_col = st.sidebar.selectbox("Team / Group Column:", options=all_cols, index=all_cols.index(def_team) if def_team in all_cols else 0)
@@ -211,9 +210,9 @@ if uploaded_file is not None:
         # --- ROUTING PAGES ---
         if app_page == "Dashboard Visuals":
             
-            # --- TOP LEVEL KPI METRICS ---
+            # --- TOP LEVEL KPI METRICS (Cleaned to 4 Columns, Active Sites Removed) ---
             st.subheader("⚡ Executive Summary")
-            m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
+            m_col1, m_col2, m_col3, m_col4 = st.columns(4)
             with m_col1:
                 st.metric(label="Total Logged Tickets", value=f"{total_rows_loaded:,}")
             with m_col2:
@@ -222,29 +221,35 @@ if uploaded_file is not None:
                 st.metric(label="Assigned Agents", value=f"{unique_agents_count}")
             with m_col4:
                 st.metric(label="Other Teams Found", value=len(unique_others))
-            with m_col5:
-                if location_col:
-                    unique_locs = df[df[location_col] != "Blank / Unspecified"][location_col].nunique()
-                    st.metric(label="Active Sites", value=f"{unique_locs}")
-                else:
-                    st.metric(label="Active Sites", value="N/A")
 
-            # --- INTERACTIVE TEAM EXPLORERS ---
+            # --- INTERACTIVE TEAM EXPLORERS (Sorted Descending by Ticket Volume) ---
             exp_col1, exp_col2 = st.columns(2)
             with exp_col1:
-                with st.expander("🔍 Click here to see WHICH Core Teams are Active"):
+                with st.expander("🔍 Click here to see WHICH Core Teams are Active (Highest First)"):
                     if len(active_standard_list) > 0:
+                        # Build and sort list by volume
+                        core_team_data = []
                         for team in active_standard_list:
                             count_t = len(df[df['Categorized_Team'] == team])
+                            core_team_data.append((team, count_t))
+                        core_team_data.sort(key=lambda x: x[1], reverse=True)
+                        
+                        for team, count_t in core_team_data:
                             st.write(f"• **{team}** ({count_t} tickets)")
                     else:
                         st.info("No predefined core teams detected.")
 
             with exp_col2:
-                with st.expander("🔍 Click here to view unlisted 'Other Teams'"):
+                with st.expander("🔍 Click here to view unlisted 'Other Teams' (Highest First)"):
                     if len(unique_others) > 0:
+                        # Build and sort list by volume
+                        other_team_data = []
                         for ot in unique_others:
                             count_ot = len(df[df['Cleaned_Team'] == ot])
+                            other_team_data.append((ot, count_ot))
+                        other_team_data.sort(key=lambda x: x[1], reverse=True)
+                        
+                        for ot, count_ot in other_team_data:
                             st.write(f"• **{ot}** ({count_ot} tickets)")
                     else:
                         st.info("No unlisted teams found.")
@@ -264,8 +269,6 @@ if uploaded_file is not None:
             with tab1:
                 if agent_col:
                     st.write("### Top Ticket Handling Agents")
-                    
-                    # Configuration slider inside the tab for dynamic filtering
                     max_agents = st.slider("Select top number of agents to display:", min_value=5, max_value=30, value=15)
                     
                     agent_counts = df[agent_col].value_counts().reset_index()
@@ -348,8 +351,8 @@ if uploaded_file is not None:
                             type_counts, x='Classification Type', y='Ticket Count',
                             color='Classification Type', text_auto=True,
                             color_discrete_map={
-                                "Incident": "#2563EB",   # Bold Royal Blue
-                                "Request": "#EC4899"     # Bold Vibrant Hot Pink
+                                "Incident": "#2563EB", 
+                                "Request": "#EC4899"
                             }
                         )
                         fig_type.update_traces(textfont=dict(size=14, color='black', weight='bold'), textposition='outside')
@@ -372,8 +375,8 @@ if uploaded_file is not None:
                             sla_counts, x='SLA Status', y='Ticket Count',
                             color='SLA Status', text_auto=True,
                             color_discrete_map={
-                                "Within SLA": "#10B981",    # Bold Emerald Green
-                                "SLA Violated": "#F59E0B"   # Bold Gold Yellow
+                                "Within SLA": "#10B981", 
+                                "SLA Violated": "#F59E0B"
                             }
                         )
                         fig_sla.update_traces(textfont=dict(size=14, color='black', weight='bold'), textposition='outside')
